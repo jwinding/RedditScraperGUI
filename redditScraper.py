@@ -14,7 +14,7 @@ class redditScraper:
         self.password = password
         self.reddit = praw.Reddit(client_id = 'mtCkwaHIYGEmuA',
                          client_secret = 'hf4ESLBWdHLgaQ74xGndS53VhG4',
-                         user_agent = 'windows:image_scraper (by /u/hopffiber)',
+                         user_agent = 'windows:image_scraper',
                          username = username,
                          password = password)
 
