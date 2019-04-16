@@ -9,4 +9,5 @@ Or one can make a new reddit account to use with this app. In the future I
 might implement some simple encryption for the user info.
 
 The reddit scraping is done using the PRAW API, and the user interface is 
-implemented using PyQt5. 
+implemented using PyQt5. The redditScraper.py file deals with the interfacing with
+reddit, and the redditScraperGUI.py implements the GUI, logically enough. 
