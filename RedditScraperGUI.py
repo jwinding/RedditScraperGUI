@@ -102,7 +102,8 @@ class RedditScraperWindow(QWidget):
 
     def init_components(self):
         """initializes all components and sets up the layout"""
-        internalWidget = QWidget()
+        internalWidgetInput = QWidget()
+        internalWidgetTree = QWidget() 
 
         ############ define components ####################
         self.subredditInput = QLineEdit()
@@ -123,13 +124,17 @@ class RedditScraperWindow(QWidget):
                                  "Top this month", "Top past year",
                                  "New", "Controversial"])
         sortingLabel = QLabel('sorting method')
-        self.runButton = QPushButton('Download images')
-        self.chooseDirButton = QPushButton('chose download dir')
-        self.stopButton = QPushButton('Stop download')
+        self.runButton = QPushButton('Download')
+        self.chooseDirButton = QPushButton('download dir')
+        self.stopButton = QPushButton('Stop')
 
         self.fileModel = QFileSystemModel()
         self.tree = QTreeView()
+
         self.tree.setModel(self.fileModel)
+        self.tree.setColumnHidden(1, True)
+        self.tree.setColumnHidden(2, True)
+        self.tree.setColumnHidden(3, True)
 
         ############## Menu stuff ###################
         menu_bar = QMenuBar()
@@ -144,7 +149,7 @@ class RedditScraperWindow(QWidget):
         self.help_action = QAction('Help', self)
         help_menu.addAction(self.help_action)
         menu_bar.setFixedHeight(30)
-        ###########################################################
+        
 
         ############# Setup the grid layout###############################
         grid = QGridLayout()
@@ -162,19 +167,31 @@ class RedditScraperWindow(QWidget):
         grid.addWidget(self.stopButton,5,0)
         grid.addWidget(self.runButton,5,1)
         grid.addWidget(self.outputText,6,0,6,2)
-        grid.addWidget(self.tree,1,3, 11,3)
+        # grid.addWidget(self.tree,1,2, 11,7)
+
+        hboxTree = QHBoxLayout()
+        hboxTree.addWidget(self.tree)
 
         #the image viewer, setting how it behaves under resizing.
         self.imgView.setSizePolicy(QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding))
         self.imgView.setMaximumHeight(800)
 
-        internalWidget.setLayout(grid)
-        internalWidget.setMinimumWidth(700)
-        internalWidget.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.MinimumExpanding))
+        internalWidgetInput.setLayout(grid)
+        # internalWidgetInput.setMinimumWidth(300)
+        internalWidgetInput.setFixedWidth(300)
+        internalWidgetInput.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.MinimumExpanding))
 
+        internalWidgetTree.setLayout(hboxTree)
+        internalWidgetTree.setFixedWidth(360)
+        internalWidgetTree.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.MinimumExpanding))
+
+        #construct layout of main window. 
         hbox = QHBoxLayout()
+        hbox.setSpacing(0)
+        hbox.setContentsMargins(0,0,0,0)
         hbox.setMenuBar(menu_bar)
-        hbox.addWidget(internalWidget)
+        hbox.addWidget(internalWidgetInput)
+        hbox.addWidget(internalWidgetTree)
         hbox.addWidget(self.imgView)
         self.setLayout(hbox)
 
@@ -277,7 +294,7 @@ class RedditScraperWindow(QWidget):
     @pyqtSlot(str)
     def update_output_text(self, message:str):
         """updates the output text area, to show progress on downloads."""
-        self.outputText.setText(self.outputText.toPlainText() + message)
+        self.outputText.setText(message+self.outputText.toPlainText() )
 
     def saveSubreddit(self, subreddit, num, sorting):
         """helper function to save the current settings to the config file."""
@@ -308,7 +325,6 @@ class RedditScraperWindow(QWidget):
             msgBox.setWindowTitle("Invalid subreddit")
             msgBox.exec_()
 
-        #some check here that we have a valid username+password.
 
         pass
 
@@ -380,12 +396,12 @@ class RedditDownloadThread(QThread):
 
     def run(self):
         """Runs the actual download, using various helper functions from the redditScraper class."""
+        self.changeText.emit('Downloading ...\n ------------------------------------------ \n')
         img_urls = self.reddit.get_image_urls(self.subreddit, self.sorting, self.num)
         folder = os.path.join(self.base_folder, self.subreddit)
         date = str(datetime.datetime.now().date())
 
-        self.changeText.emit('Downloading ' + str(
-            len(img_urls)) + ' images from /r/' + self.subreddit + ', sorted by ' + self.sorting + '\n')
+        self.changeText.emit( '\n'+ str(len(img_urls)) + ' images from /r/' + self.subreddit + ', sorted by ' + self.sorting + '\n')
 
         for i, url in enumerate(img_urls):
             filename = date +' '+self.sorting + ' ' + str(i + 1)
