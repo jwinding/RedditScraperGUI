@@ -2,3 +2,7 @@ redditScraper.ini
 *.pyc
 .vscode
 .idea
+env/
+dist/
+build/
+redditScraper/reddit_secrets.py

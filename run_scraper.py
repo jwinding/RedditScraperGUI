@@ -1,5 +1,5 @@
 import sys
-from RedditScraperGUI import RedditScraperWindow
+from redditScraper.RedditScraperGUI import RedditScraperWindow
 from PyQt5.QtWidgets import QApplication
 
 if __name__ == '__main__':

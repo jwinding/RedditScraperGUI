@@ -1,22 +1,37 @@
 #reddit image scraper2, using praw
 
+import os, sys
+import requests
 import praw
 from prawcore import NotFound, OAuthException
-import requests
-import os
-from PIL import Image
 
+try:
+    import redditScraper.reddit_secrets as secrets
+except ImportError:
+    print("You need to setup the reddit_secrets.py file with your reddit information!")
+    sys.exit(1)
 
 class redditScraper:
-
-    def __init__(self, username: str, password: str):
-        self.user = username
-        self.password = password
-        self.reddit = praw.Reddit(client_id = 'mtCkwaHIYGEmuA',
-                         client_secret = 'hf4ESLBWdHLgaQ74xGndS53VhG4',
-                         user_agent = 'windows:image_scraper',
-                         username = username,
-                         password = password)
+    """Utility class that interfaces with PRAW, the python bindings for the reddit api."""
+    def __init__(self):
+        self.reddit = praw.Reddit(client_id = secrets.client_id,
+                         client_secret = secrets.client_secret,
+                         user_agent = secrets.user_agent,
+                         username = secrets.username,
+                         password = secrets.password,
+                        check_for_updates=False,
+                        comment_kind="t1",
+                        message_kind="t4",
+                        redditor_kind="t2",
+                        submission_kind="t3",
+                        subreddit_kind="t5",
+                        trophy_kind="t6",
+                        oauth_url="https://oauth.reddit.com",
+                        reddit_url="https://www.reddit.com",
+                        short_url="https://redd.it",
+                        ratelimit_seconds=5,
+                        timeout=16,
+                    )
 
         #dictionary for switching between the sorting options:
         self.sorting_options = {"Top all time": self.top_all_posts,
@@ -46,9 +61,7 @@ class redditScraper:
     def hot_posts(self,sub:str, num:int):
         subreddit=self.reddit.subreddit(sub)
         return subreddit.hot( limit = num)
-##########################################################
-
-
+#######################################################
     def sub_exists(self, sub:str) -> bool:
         """Tests if a given subreddit exists."""
         exists = True
@@ -90,11 +103,13 @@ class redditScraper:
         if not os.path.exists(folder):
             os.makedirs(folder)
         if url[-4:] == '.jpg' or url[-4:] == '.png' or url[-4:] == '.gif':
-            img_data = requests.get(url).content
-            with open(folder + '\\' + filename + url[-4:], 'wb') as handler:
-                handler.write(img_data)
-                # print('downloaded ' + filename)
-
+            try:
+                img_data = requests.get(url).content
+                with open(folder + '\\' + filename + url[-4:], 'wb') as handler:
+                    handler.write(img_data)
+            except Exception as e:
+                print("Failed to download {}".format(url))
+                print("Exception: {}".format(e))
 
     def download_images_print(self, sub: str, sorting:str, num: int, base_folder:str):
         """Downloads the selected images into base_folder/subreddit.
@@ -109,7 +124,3 @@ class redditScraper:
             self.download_image(url, filename, folder)
             print(str(i), end=" ")
         print('Finished!' )
-
-
-
-

@@ -1,8 +1,8 @@
 import os
-import datetime
-from PyQt5.QtCore import QItemSelection, Qt, QThread, pyqtSignal, pyqtSlot, QModelIndex
-import redditScraper
-from loginWindow import LoginInfoWindow
+from sys import exit
+from PyQt5.QtCore import QItemSelection, Qt, pyqtSlot, QModelIndex
+from .redditScraper import redditScraper
+from .downloadThread import RedditDownloadThread
 import configparser
 from PyQt5.QtGui import QPixmap, QIntValidator, QIcon
 from PyQt5.QtWidgets import (QWidget, QGridLayout, QLabel,
@@ -21,14 +21,14 @@ class RedditScraperWindow(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.readUserConfig()
-        self.initUI()
+        self.read_user_config()
+        self.initialize_ui()
 
-    def initUI(self):
+    def initialize_ui(self):
         """sets up the user interface, connects all the signals and shows the window. """
 
         self.init_components()
-        self.readSettingsConfig()
+        self.read_settings_config()
         self.connect_signals()
 
         self.setGeometry(100, 100, 1000, 800)
@@ -43,7 +43,11 @@ class RedditScraperWindow(QWidget):
         internalWidgetTree = QWidget() 
 
         ############ define components ####################
-        self.subredditInput = QLineEdit()
+        self.subredditInput = QComboBox()
+        self.subredditInput.setEditable(True)
+        self.subredditInput.addItems(self.get_downloaded_subreddits())
+
+
         self.numInput = QLineEdit()
         self.onlyInt = QIntValidator()
         self.numInput.setValidator(self.onlyInt)
@@ -78,8 +82,6 @@ class RedditScraperWindow(QWidget):
         menu_bar = QMenuBar()
         file_menu = menu_bar.addMenu('File')
         help_menu = menu_bar.addMenu('Help')
-        self.edit_login_action = QAction('Edit reddit login', self)
-        file_menu.addAction(self.edit_login_action)
 
         self.exit_action = QAction('Exit', self)
 
@@ -137,60 +139,45 @@ class RedditScraperWindow(QWidget):
 
     def connect_signals(self):
         """connects all the signals to the right functions"""
-        self.chooseDirButton.clicked.connect(self.showDirDialog)
-        self.runButton.clicked.connect(self.runDownloadThreaded)
+        self.chooseDirButton.clicked.connect(self.show_dir_dialog)
+        self.runButton.clicked.connect(self.run_download_threaded)
         self.tree.clicked.connect(self.on_treeView_clicked)
-        self.stopButton.clicked.connect(self.stopDownload)
+        self.stopButton.clicked.connect(self.stop_download)
 
         self.exit_action.triggered.connect(exit)
 
-        self.edit_login_action.triggered.connect(self.edit_login_info)
-        self.help_action.triggered.connect(self.helpClicked)
+        #self.edit_login_action.triggered.connect(self.edit_login_info)
+        self.help_action.triggered.connect(self.show_help)
 
         self.tree.selectionModel().selectionChanged.connect(self.on_selection_change)
 
-    def readUserConfig(self):
+    def read_user_config(self):
         """reads in the users username and password from the config file, or if there is no config file,
         shows an input dialog.
         Also tests so that only valid login information gets saved to the config file. """
         config = configparser.ConfigParser()
-
+        self.redditScraper = redditScraper()
         if os.path.exists('redditScraper.ini'):
             config.read('redditScraper.ini')
 
-            self.username = config['USER']['username']
-            self.password = config['USER']['password']
-            self.redditScraper = redditScraper.redditScraper(self.username,
-                                                             self.password)
             if 'DIR' in config:
                 self.folder = config['DIR']['root_folder']
 
         else:
-            while True:
-                LoginInfoWindow(self)
-                self.redditScraper = redditScraper.redditScraper(self.username,
-                                                                 self.password)
-                if self.redditScraper.valid_login():
-                    break
-                else:
-                    msgBox = QMessageBox()
-                    msgBox.setText('Please provide a valid username and password.')
-                    msgBox.setWindowTitle("Invalid information")
-                    msgBox.exec_()
-
-
-
-            config['USER'] = {
-                'username' : self.username,
-                'password' : self.password
+            config['REDDIT'] = {
+                'subreddit': "wallpapers",
+                'num': 10,
+                'sorting': "Hot",
+                'downloaded_subreddits': ""
             }
+
 
             with open('redditScraper.ini', 'w') as configfile:
                 config.write(configfile)
 
         self.config=config
 
-    def readSettingsConfig(self):
+    def read_settings_config(self):
         """reads the saved settings from the config file, if they're there."""
         if 'DIR' in self.config:
             self.folder = self.config['DIR']['root_folder']
@@ -199,7 +186,7 @@ class RedditScraperWindow(QWidget):
             self.dirLabel.setText(self.folder)
 
         if 'REDDIT' in self.config:
-            self.subredditInput.setText(self.config['REDDIT']['subreddit'])
+            self.subredditInput.setCurrentText(self.config['REDDIT']['subreddit'])
             self.numInput.setText(self.config['REDDIT']['num'])
             self.sortingCb.setCurrentText(self.config['REDDIT']['sorting'])
 
@@ -210,23 +197,22 @@ class RedditScraperWindow(QWidget):
     @pyqtSlot(QModelIndex)
     def on_treeView_clicked(self, index):
         """triggers when the user clicks on a file item shown in the treeView, and shows that file in the picture viewer."""
-
-        indexItem = self.fileModel.index(index.row(),0,index.parent() )
-        filePath = self.fileModel.filePath(indexItem)
-        pixmap=QPixmap(filePath)
-        height = self.imgView.geometry().height()
-        self.imgView.setPixmap(pixmap.scaledToHeight(height))
+        index = self.fileModel.index(index.row(),0,index.parent() )
+        self.show_image(index)
 
     def on_selection_change(self, selected: QItemSelection, deselected: QItemSelection):
         """ Triggers when the selected item in the treeview changes, and updates the shown picture. """
         selected_image_index = self.tree.selectedIndexes()[0]
-        filePath = self.fileModel.filePath(selected_image_index)
-        pixmap=QPixmap(filePath)
-        height = self.imgView.geometry().height()
-        self.imgView.setPixmap(pixmap.scaledToHeight(height))
+        self.show_image(selected_image_index)
 
+    def show_image(self, index: QModelIndex):
+        filePath = self.fileModel.filePath(index)
+        if os.path.isfile(filePath) and filePath.split(".")[-1] in ["jpg","gif","png","jpeg"]:
+            pixmap=QPixmap(filePath)
+            height = self.imgView.geometry().height()
+            self.imgView.setPixmap(pixmap.scaledToHeight(height))
 
-    def showDirDialog(self):
+    def show_dir_dialog(self):
         """lets the user select the root folder, and saves the choice to the config file."""
 
         self.folder =QFileDialog.getExistingDirectory(self,'Choose base directory','/home')
@@ -236,7 +222,7 @@ class RedditScraperWindow(QWidget):
         with open('redditScraper.ini', 'w') as configfile:
             self.config.write(configfile)
 
-        idx= self.fileModel.setRootPath(self.folder)
+        idx = self.fileModel.setRootPath(self.folder)
         self.tree.setRootIndex(idx)
 
 
@@ -248,25 +234,49 @@ class RedditScraperWindow(QWidget):
         """updates the output text area, to show progress on downloads."""
         self.outputText.setText(message+self.outputText.toPlainText() )
 
-    def saveSubreddit(self, subreddit, num, sorting):
+    def save_subreddit(self, subreddit: str, num: int, sorting: str):
         """helper function to save the current settings to the config file."""
+        downloaded_subreddits = self.get_downloaded_subreddits()
+        if subreddit not in downloaded_subreddits:
+            downloaded_subreddits.append(subreddit)
+            self.subredditInput.addItem(subreddit)
+
+        downloaded_subreddits = ','.join(downloaded_subreddits)
         self.config['REDDIT'] = {
             'subreddit': subreddit,
             'num': str(num),
-            'sorting':sorting
+            'sorting':sorting,
+            'downloaded_subreddits': downloaded_subreddits
         }
+
+        
         with open('redditScraper.ini', 'w') as configfile:
             self.config.write(configfile)
 
-    def runDownloadThreaded(self):
+    def get_downloaded_subreddits(self) -> list:
+        if 'downloaded_subreddits' in self.config['REDDIT'].keys():
+            subreddits = self.config['REDDIT']['downloaded_subreddits'].split(',')
+            return subreddits     
+        return []
+
+    def run_download_threaded(self):
         """downloads the pictures. Runs in a QThread, so that the program does not freeze.
         Also checks whether the specified subreddit exists. """
-        subreddit = self.subredditInput.text()
+        subreddit = self.subredditInput.currentText()
         num = int(self.numInput.text())
         sorting = self.sortingCb.currentText()
 
         if self.redditScraper.sub_exists(subreddit):
-            self.saveSubreddit(subreddit,num,sorting)
+
+            if not hasattr(self, "folder"):
+                msgBox = QMessageBox()
+                msgBox.setText('You need to set a download folder!')
+                msgBox.setWindowTitle("Pick a download folder")
+                msgBox.exec_()
+                return
+
+
+            self.save_subreddit(subreddit,num,sorting)
             self.get_thread = RedditDownloadThread(self.redditScraper, subreddit, num,
                                                    sorting, self.folder)
             self.get_thread.changeText.connect(self.update_output_text)
@@ -280,38 +290,19 @@ class RedditScraperWindow(QWidget):
 
         pass
 
-    def stopDownload(self):
+    def stop_download(self):
         """Stops the download thread and prints a message to the output."""
-        if self.get_thread.isRunning():
-            self.get_thread.terminate()
-            self.outputText.setText(self.outputText.toPlainText() + ' Aborted!\n')
-        pass
+        try:
+            if self.get_thread.isRunning():
+                self.get_thread.terminate()
+                self.outputText.setText(self.outputText.toPlainText() + ' Aborted!\n')
+        except Exception:
+            pass
 
     ############### Menu actions: ###############
-    def edit_login_info(self):
-        """let's the user change the reddit login information. Checks so that only valid logins gets saved
-        to the config file. """
-        while True:
-            LoginInfoWindow(self)
-            self.redditScraper = redditScraper.redditScraper(self.username,
-                                                             self.password)
-            if self.redditScraper.valid_login():
-                break
-            else:
-                msgBox = QMessageBox()
-                msgBox.setText('Please provide a valid username and password.')
-                msgBox.setWindowTitle("Invalid information")
-                msgBox.exec_()
+    
 
-        self.config['USER'] = {
-            'username': self.username,
-            'password': self.password
-        }
-
-        with open('redditScraper.ini', 'w') as configfile:
-            self.config.write(configfile)
-
-    def helpClicked(self):
+    def show_help(self):
         msgBox = QMessageBox()
 
         msgBox.setWindowIcon(QIcon('redditIcon.png'))
@@ -327,39 +318,3 @@ class RedditScraperWindow(QWidget):
         msgBox.setWindowTitle("Help")
         msgBox.exec_()
 
-
-class RedditDownloadThread(QThread):
-    """Defines the thread that runs the download."""
-
-    changeText = pyqtSignal(str)
-
-    def __init__(self, redditInstance, sub: str, num: int, sort: str, base_folder:str):
-        QThread.__init__(self)
-        self.reddit=redditInstance
-        self.subreddit = sub
-        self.num = num
-        self.sorting = sort
-        self.base_folder=base_folder
-
-        # self.changeText = pyqtSignal(str)
-
-    def __del__(self):
-        self.wait()
-
-    def run(self):
-        """Runs the actual download, using various helper functions from the redditScraper class."""
-        self.changeText.emit('Downloading ...\n ------------------------------------------ \n')
-        img_urls = self.reddit.get_image_urls(self.subreddit, self.sorting, self.num)
-        folder = os.path.join(self.base_folder, self.subreddit)
-        date = str(datetime.datetime.now().date())
-
-        self.changeText.emit( '\n'+ str(len(img_urls)) + ' images from /r/' + self.subreddit + ', sorted by ' + self.sorting + '\n')
-
-        for i, url in enumerate(img_urls):
-            filename = date +' '+self.sorting + ' ' + str(i + 1)
-            self.reddit.download_image(url, filename, folder)
-            self.changeText.emit(str(i+1) + ' ')
-            self.msleep(500)
-
-
-        self.changeText.emit("Finished! \n")
