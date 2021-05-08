@@ -1,86 +1,23 @@
-import sys, os
+import os
 import datetime
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QModelIndex
+from PyQt5.QtCore import QItemSelection, Qt, QThread, pyqtSignal, pyqtSlot, QModelIndex
 import redditScraper
+from loginWindow import LoginInfoWindow
 import configparser
 from PyQt5.QtGui import QPixmap, QIntValidator, QIcon
-from PyQt5.QtWidgets import (QWidget, QApplication,
-                             QGridLayout, QLabel,
+from PyQt5.QtWidgets import (QWidget, QGridLayout, QLabel,
                              QPushButton,QAction,
                              QLineEdit, QMessageBox,
                              QFileDialog, QTextEdit,
                              QFileSystemModel, QTreeView,
                              QHBoxLayout, QMenuBar,
-                             QComboBox, QDialog ,
-                             QSizePolicy)
-
-class LoginInfoWindow(QDialog):
-    """An input form to get the users reddit login information."""
-    def __init__(self, parent):
-        super().__init__()
-        self.parent = parent
-
-        self.initUI()
-
-    def initUI(self):
-        # define components
-        nameInput = QLineEdit()
-        passwordInput = QLineEdit()
-        infoLabel = QLabel('To use the scraper, you need to have a valid reddit account.')
-        nameLabel = QLabel('username')
-        passwordLabel = QLabel('password')
-
-
-        self.nameInput=nameInput
-        self.passwordInput=passwordInput
-
-        submitButton = QPushButton('Submit')
-        exitButton = QPushButton('Quit')
-
-        # setup the grid layout
-        grid = QGridLayout()
-        grid.setSpacing(4)
-        grid.addWidget(infoLabel, 1, 0, 1,2)
-        grid.addWidget(nameLabel, 2, 0)
-        grid.addWidget(nameInput, 2, 1)
-        grid.addWidget(passwordLabel, 3, 0)
-        grid.addWidget(passwordInput, 3, 1)
-        grid.addWidget(submitButton,4,0)
-        grid.addWidget(exitButton, 4,1)
-
-        self.setLayout(grid)
-
-
-
-        submitButton.clicked.connect(self.submitData)
-        exitButton.clicked.connect(self.closeOrExit)
-
-        self.setGeometry(100, 300, 400, 170)
-        self.setWindowTitle('Reddit Image Scraper')
-        self.exec()
-
-    def submitData(self):
-        if self.nameInput.text() and self.passwordInput.text():
-            self.parent.username = self.nameInput.text()
-            self.parent.password = self.passwordInput.text()
-            self.close()
-        else:
-            msgBox = QMessageBox()
-            msgBox.setText('Please provide a valid username and password.')
-            msgBox.setWindowTitle("Invalid information")
-            msgBox.exec_()
-        pass
-
-    def closeOrExit(self):
-        if 'USER' in self.parent.config:
-            self.close()
-        else:
-            sys.exit()
+                             QComboBox, QSizePolicy)
+MAX_IMAGE_HEIGHT = 1200
 
 class RedditScraperWindow(QWidget):
     """The main window of the program."""
 
-########### Setup ##################################
+    ########### Setup ##################################
     def __init__(self):
         super().__init__()
 
@@ -136,6 +73,7 @@ class RedditScraperWindow(QWidget):
         self.tree.setColumnHidden(2, True)
         self.tree.setColumnHidden(3, True)
 
+
         ############## Menu stuff ###################
         menu_bar = QMenuBar()
         file_menu = menu_bar.addMenu('File')
@@ -174,7 +112,9 @@ class RedditScraperWindow(QWidget):
 
         #the image viewer, setting how it behaves under resizing.
         self.imgView.setSizePolicy(QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding))
-        self.imgView.setMaximumHeight(800)
+        self.imgView.setMaximumHeight(MAX_IMAGE_HEIGHT)
+
+        self.imgView.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         internalWidgetInput.setLayout(grid)
         # internalWidgetInput.setMinimumWidth(300)
@@ -206,6 +146,8 @@ class RedditScraperWindow(QWidget):
 
         self.edit_login_action.triggered.connect(self.edit_login_info)
         self.help_action.triggered.connect(self.helpClicked)
+
+        self.tree.selectionModel().selectionChanged.connect(self.on_selection_change)
 
     def readUserConfig(self):
         """reads in the users username and password from the config file, or if there is no config file,
@@ -264,7 +206,7 @@ class RedditScraperWindow(QWidget):
 
 
 
-################### Actions: ##################
+    ################### Actions: ##################
     @pyqtSlot(QModelIndex)
     def on_treeView_clicked(self, index):
         """triggers when the user clicks on a file item shown in the treeView, and shows that file in the picture viewer."""
@@ -272,7 +214,17 @@ class RedditScraperWindow(QWidget):
         indexItem = self.fileModel.index(index.row(),0,index.parent() )
         filePath = self.fileModel.filePath(indexItem)
         pixmap=QPixmap(filePath)
-        self.imgView.setPixmap(pixmap.scaledToHeight(800))
+        height = self.imgView.geometry().height()
+        self.imgView.setPixmap(pixmap.scaledToHeight(height))
+
+    def on_selection_change(self, selected: QItemSelection, deselected: QItemSelection):
+        """ Triggers when the selected item in the treeview changes, and updates the shown picture. """
+        selected_image_index = self.tree.selectedIndexes()[0]
+        filePath = self.fileModel.filePath(selected_image_index)
+        pixmap=QPixmap(filePath)
+        height = self.imgView.geometry().height()
+        self.imgView.setPixmap(pixmap.scaledToHeight(height))
+
 
     def showDirDialog(self):
         """lets the user select the root folder, and saves the choice to the config file."""
@@ -335,7 +287,7 @@ class RedditScraperWindow(QWidget):
             self.outputText.setText(self.outputText.toPlainText() + ' Aborted!\n')
         pass
 
-##### Menu actions: ###############
+    ############### Menu actions: ###############
     def edit_login_info(self):
         """let's the user change the reddit login information. Checks so that only valid logins gets saved
         to the config file. """
@@ -411,11 +363,3 @@ class RedditDownloadThread(QThread):
 
 
         self.changeText.emit("Finished! \n")
-
-
-
-######### Runs the thing: ############
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    ex = RedditScraperWindow()
-    sys.exit(app.exec_())

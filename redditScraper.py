@@ -60,7 +60,7 @@ class redditScraper:
     def valid_login(self)-> bool:
         """Tests if the provided login information works for logging into reddit."""
         try:
-            self.reddit.subreddit('news').hot().next()
+            next(self.reddit.subreddit('news').hot())
         except OAuthException:
             return False
         return True
