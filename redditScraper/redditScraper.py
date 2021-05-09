@@ -17,8 +17,6 @@ class redditScraper:
         self.reddit = praw.Reddit(client_id = secrets.client_id,
                          client_secret = secrets.client_secret,
                          user_agent = secrets.user_agent,
-                         username = secrets.username,
-                         password = secrets.password,
                         check_for_updates=False,
                         comment_kind="t1",
                         message_kind="t4",
@@ -84,14 +82,16 @@ class redditScraper:
         l = imgur_link.split('/')
         return '/'.join([x if x != 'imgur.com' else 'i.imgur.com' for x in l]) + '.jpg'
 
-    def get_image_urls(self, sub: str, sorting:str, num: int)-> list :
+    def get_image_urls(self, sub: str, sorting:str, num: int, limit: int)-> list :
         """returns a list of up to num links to images."""
-        posts = self.sorting_options[sorting](sub, num)
+        posts = self.sorting_options[sorting](sub, limit)
 
         urls = [x.url for x in posts]
 
         image_urls = []
         for i in range(len(urls)):
+            if len(image_urls) >= num: break
+
             if urls[i][-4:] == '.jpg' or urls[i][-4:] == '.png' or urls[i][-4:] == '.gif':
                 image_urls.append(urls[i])
             elif 'imgur.com' in urls[i].split('/'):
@@ -111,10 +111,10 @@ class redditScraper:
                 print("Failed to download {}".format(url))
                 print("Exception: {}".format(e))
 
-    def download_images_print(self, sub: str, sorting:str, num: int, base_folder:str):
+    def download_images_print(self, sub: str, sorting:str, num: int, limit:int, base_folder:str):
         """Downloads the selected images into base_folder/subreddit.
         Can be used in the console to test that this redditScraper class works as intended. """
-        img_urls = self.get_image_urls(sub, sorting, num)
+        img_urls = self.get_image_urls(sub, sorting, num, limit)
 
         folder = os.path.join(base_folder, sub)
 

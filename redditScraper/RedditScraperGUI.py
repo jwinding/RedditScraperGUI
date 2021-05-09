@@ -4,8 +4,8 @@ from PyQt5.QtCore import QItemSelection, Qt, pyqtSlot, QModelIndex
 from .redditScraper import redditScraper
 from .downloadThread import RedditDownloadThread
 import configparser
-from PyQt5.QtGui import QPixmap, QIntValidator, QIcon
-from PyQt5.QtWidgets import (QWidget, QGridLayout, QLabel,
+from PyQt5.QtGui import QPalette, QPixmap, QIntValidator, QIcon
+from PyQt5.QtWidgets import (QCheckBox, QScrollArea, QVBoxLayout, QWidget, QGridLayout, QLabel,
                              QPushButton,QAction,
                              QLineEdit, QMessageBox,
                              QFileDialog, QTextEdit,
@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (QWidget, QGridLayout, QLabel,
                              QHBoxLayout, QMenuBar,
                              QComboBox, QSizePolicy)
 MAX_IMAGE_HEIGHT = 1200
+LOOKUP_LIMIT_MULTIPLIER = 3
 
 class RedditScraperWindow(QWidget):
     """The main window of the program."""
@@ -22,7 +23,20 @@ class RedditScraperWindow(QWidget):
         super().__init__()
 
         self.read_user_config()
+        self.load_assets()
         self.initialize_ui()
+
+    def load_assets(self):
+        script_folder = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        asset_folder = os.path.join(script_folder, "assets")
+        if os.path.isdir(asset_folder):
+            self.download_icon = QIcon(os.path.join(asset_folder, 'download_icon.png'))
+            self.stop_icon = QIcon(os.path.join(asset_folder, 'stop_icon.png'))
+            self.reddit_icon = QIcon(os.path.join(asset_folder, 'reddit_icon.png'))
+        else:
+            self.download_icon = QIcon(os.path.join("assets", 'download_icon.png'))
+            self.stop_icon = QIcon(os.path.join("assets", 'stop_icon.png'))
+            self.reddit_icon = QIcon(os.path.join("assets", 'reddit_icon.png'))        
 
     def initialize_ui(self):
         """sets up the user interface, connects all the signals and shows the window. """
@@ -33,7 +47,7 @@ class RedditScraperWindow(QWidget):
 
         self.setGeometry(100, 100, 1000, 800)
         self.setWindowTitle('Reddit Image Scraper')
-        self.setWindowIcon(QIcon('redditIcon.png'))
+        self.setWindowIcon(self.reddit_icon)
 
         self.show()
 
@@ -53,12 +67,14 @@ class RedditScraperWindow(QWidget):
         self.numInput.setValidator(self.onlyInt)
         subredditLabel = QLabel('subreddit')
         numLabel = QLabel('number of images')
-        self.dirLabel = QLabel('base download dir')
-
+        self.dirLabel = QLabel('choose a directory')
+        scale_label = QLabel("Scale images?")
         self.imgView = QLabel()
 
         self.outputText = QTextEdit('')
         self.outputText.setReadOnly(True)
+        
+        self.scale_cb = QCheckBox()
 
         self.sortingCb = QComboBox()
         self.sortingCb.addItems(["Hot", "Top all time",
@@ -66,8 +82,10 @@ class RedditScraperWindow(QWidget):
                                  "New", "Controversial"])
         sortingLabel = QLabel('sorting method')
         self.runButton = QPushButton('Download')
-        self.chooseDirButton = QPushButton('download dir')
+        self.runButton.setIcon(self.download_icon)
+        self.chooseDirButton = QPushButton('Save dir')
         self.stopButton = QPushButton('Stop')
+        self.stopButton.setIcon(self.stop_icon)
 
         self.fileModel = QFileSystemModel()
         self.tree = QTreeView()
@@ -106,17 +124,26 @@ class RedditScraperWindow(QWidget):
         grid.addWidget(self.dirLabel,4,1)
         grid.addWidget(self.stopButton,5,0)
         grid.addWidget(self.runButton,5,1)
-        grid.addWidget(self.outputText,6,0,6,2)
+        grid.addWidget(self.outputText,7,0,7,2)
         # grid.addWidget(self.tree,1,2, 11,7)
 
-        hboxTree = QHBoxLayout()
+        grid.addWidget(scale_label, 6,0)
+        grid.addWidget(self.scale_cb, 6, 1)
+
+        hboxTree = QVBoxLayout()
         hboxTree.addWidget(self.tree)
+
 
         #the image viewer, setting how it behaves under resizing.
         self.imgView.setSizePolicy(QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding))
         self.imgView.setMaximumHeight(MAX_IMAGE_HEIGHT)
 
         self.imgView.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        img_scroll_area = QScrollArea()
+        img_scroll_area.setMinimumHeight(MAX_IMAGE_HEIGHT)
+        img_scroll_area.setMinimumWidth(MAX_IMAGE_HEIGHT)
+        img_scroll_area.setWidget(self.imgView)
 
         internalWidgetInput.setLayout(grid)
         # internalWidgetInput.setMinimumWidth(300)
@@ -134,7 +161,7 @@ class RedditScraperWindow(QWidget):
         hbox.setMenuBar(menu_bar)
         hbox.addWidget(internalWidgetInput)
         hbox.addWidget(internalWidgetTree)
-        hbox.addWidget(self.imgView)
+        hbox.addWidget(img_scroll_area)
         self.setLayout(hbox)
 
     def connect_signals(self):
@@ -143,7 +170,7 @@ class RedditScraperWindow(QWidget):
         self.runButton.clicked.connect(self.run_download_threaded)
         self.tree.clicked.connect(self.on_treeView_clicked)
         self.stopButton.clicked.connect(self.stop_download)
-
+        self.scale_cb.clicked.connect(self.refresh_image)
         self.exit_action.triggered.connect(exit)
 
         #self.edit_login_action.triggered.connect(self.edit_login_info)
@@ -202,6 +229,9 @@ class RedditScraperWindow(QWidget):
 
     def on_selection_change(self, selected: QItemSelection, deselected: QItemSelection):
         """ Triggers when the selected item in the treeview changes, and updates the shown picture. """
+        self.refresh_image()
+
+    def refresh_image(self):
         selected_image_index = self.tree.selectedIndexes()[0]
         self.show_image(selected_image_index)
 
@@ -209,8 +239,15 @@ class RedditScraperWindow(QWidget):
         filePath = self.fileModel.filePath(index)
         if os.path.isfile(filePath) and filePath.split(".")[-1] in ["jpg","gif","png","jpeg"]:
             pixmap=QPixmap(filePath)
-            height = self.imgView.geometry().height()
-            self.imgView.setPixmap(pixmap.scaledToHeight(height))
+            if self.scale_cb.isChecked():
+                self.imgView.setFixedHeight(MAX_IMAGE_HEIGHT)
+                scaled_img = pixmap.scaledToHeight(MAX_IMAGE_HEIGHT)
+                self.imgView.setFixedWidth(scaled_img.width())
+                self.imgView.setPixmap(scaled_img)
+            else:
+                self.imgView.setFixedHeight(pixmap.height())
+                self.imgView.setFixedWidth(pixmap.width())
+                self.imgView.setPixmap(pixmap)
 
     def show_dir_dialog(self):
         """lets the user select the root folder, and saves the choice to the config file."""
@@ -278,6 +315,7 @@ class RedditScraperWindow(QWidget):
 
             self.save_subreddit(subreddit,num,sorting)
             self.get_thread = RedditDownloadThread(self.redditScraper, subreddit, num,
+                                                    num*LOOKUP_LIMIT_MULTIPLIER,
                                                    sorting, self.folder)
             self.get_thread.changeText.connect(self.update_output_text)
             self.get_thread.start()
@@ -305,7 +343,7 @@ class RedditScraperWindow(QWidget):
     def show_help(self):
         msgBox = QMessageBox()
 
-        msgBox.setWindowIcon(QIcon('redditIcon.png'))
+        msgBox.setWindowIcon(self.reddit_icon)
         msgBox.setText('This program downloads images posted to reddit.com, or more specifically, to subreddits' +
                        '(i.e. sub-forums). To use it, one needs a valid reddit account, which one can sign up for ' +
                        'on reddit.com. One also needs to know some names of subreddits. \n Some suggestions for subreddits: ' +

@@ -4,5 +4,4 @@
 client_id = ''
 client_secret = ''
 user_agent = ''
-username = ''
-password = ''
+user_agent = 'windows:image_scraper'
